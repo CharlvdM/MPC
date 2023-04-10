@@ -1,0 +1,576 @@
+\documentclass[12pt]{article}
+
+\usepackage{graphicx} % to include figures
+%\graphicspath{{Figures/}} %This can be used if figures are in a folder in the Latex path
+\graphicspath{{../Matlab/Figures/}} %Setting the graphicspath
+\usepackage{float} % to force figure placement with [H]
+\usepackage{geometry} % to set the page size and margins
+\geometry{a4paper, margin=2.5cm}
+\usepackage{amsmath,amsthm,amssymb} % enables \begin{subequations} and \begin{aligned}
+\usepackage{matlab-prettifier} % to import MATLAB code
+\usepackage[hidelinks]{hyperref} % enable hyperlinks (boxes hidden)
+\usepackage{pgf} % enable pgf figures
+\usepackage{siunitx} % enable SI units and notation
+\usepackage{arydshln} % for partitioned matrices with dashed lines
+\usepackage[numbib]{tocbibind} % give the references section a section number
+\setcounter{MaxMatrixCols}{18} % if this is not done, a matrix may only contain 10 columns
+
+%% packages for pfg plots from MATLAB's exported tex files
+%% See https://github.com/matlab2tikz/matlab2tikz for details
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+%% the following commands are needed for some matlab2tikz features
+\usetikzlibrary{plotmarks}
+\usetikzlibrary{arrows.meta}
+\usepgfplotslibrary{patchplots}
+\usepackage{grffile}
+%% you may also want the following commands
+%\pgfplotsset{plot coordinates/math parser=false}
+%\newlength\figureheight
+%\newlength\figurewidth
+
+\begin{document}
+
+\title{Assignment 7: Introduction to Constrained MPC}
+\author{Charl van de Merwe, 20804157\\
+Optimal Control, EBO 780}
+\date{June 14, 2020}
+
+\maketitle
+
+\section{Assignment Overview}
+The purpose of this assignment is to implement a simple constrained linear model predictive controller (MPC), without using MATLAB's MPC toolbox. A Kalman filter (KF) needs to be implemented to estimate the states and disturbances. The MPC and KF will make use of the prediction model, defined by
+
+\renewcommand\arraystretch{1.4}
+\begin{equation}
+\frac{Y(s)}{U(s)} = G_C(s) =
+\scalebox{1.3}{$  
+\begin{bmatrix}
+\frac{12.8}{16.7s+1}e^{-1s} & \frac{-18.9}{21s+1}e^{-3s}\\
+\frac{6.6}{10.9s+1}e^{-7s} & \frac{-19.4}{14.4s+1}e^{-3s}
+\end{bmatrix}$}. \label{eq:predModel}
+\end{equation}
+\renewcommand\arraystretch{1}
+where $Y(s)$ is the controlled variable (CV) and $U(s)$ is the manipulated variable (MV). \\
+
+The process model differs from the prediction model and is given by
+\renewcommand\arraystretch{1.4}
+\begin{equation}
+G_P(s) =
+\scalebox{1.3}{$  
+	\begin{bmatrix}
+	\frac{15.36}{16.7s+1}e^{-1s} & \frac{-18.9}{25.2s+1}e^{-3s}\\
+	\frac{7.92}{10.9s+1}e^{-7s} & \frac{-19.4}{17.28s+1}e^{-3s}
+	\end{bmatrix}$}. \label{eq:procModel}
+\end{equation}
+\renewcommand\arraystretch{1}
+
+\section{MPC and KF Description}
+\label{sec:mpcDesc}
+
+\subsection{Problem 1: MPC Description}
+\label{sec:MPCDescription}
+
+\textbf{Problem:} Define a discrete-time linear constrained MPC by giving the objective function and optimisation problem with constraints. Further, define all the variables/parameters involved. \\
+
+At each time instance, the MPC algorithm computes a sequence of future manipulated variables (MV) to optimize the future plant behaviour. The first input of the optimized system is then sent into the plant. The MPC algorithm is computed at every time instance, at a period equal to the sampling frequency ($ T_s $) \cite{Qin.2003}. MPC is a discrete time algorithm. The optimization problem is described mathematically as
+\begin{equation}
+\min_{u(k+N_C|k),...,u(k|k)} V(x(k|k),u),
+\end{equation}
+
+where $ u $ is the input to the plant, $ x $ is the plant states ($ x(k|k) $ is the initial state, measured or estimated from the plant) $N_C$ is the amount of control steps and $ V $ is the objective function to be minimized. The input and states are constrained, as defined by
+%\begin{subequations}
+\begin{align*}
+x &\in X \\
+u &\in U \\
+X &\triangleq \{x \in \mathbb{R}^{N_X}|x_l \leq x \leq x_u\} \\
+U &\triangleq \{u \in \mathbb{R}^{N_U}|u_l \leq u \leq u_u\}
+\end{align*}
+%\end{subequations}
+
+Note that the $ |k $ term indicates that the plant behaviour is predicted from the measured states at discrete time instance $ k $. As an example, $ x(5|3) $ is the predicted states at instance $5$, propagated from the measured states at instance $3$. The objective function is
+\begin{equation}
+\begin{aligned}
+V(x,u) = &\sum_{i=1}^{N_P} (Y_{sp}(k)-y(k+i|k))^T Q (Y_{sp}(k)-y(k+i|k)) \,+\\ &\sum_{i=1}^{N_C} \Delta u(k+i|k)^T R \,\Delta u(k+i|k), \label{eq:ObjFunc}
+\end{aligned}
+\end{equation}
+subject to
+\begin{subequations}
+\begin{align}
+x(k+i+1|k) &= f(x(k+i|k),u(k+i|k)) \qquad \, \forall i = 1,...,N_C\\
+x(k+i+1|k) &= f(x(k+i|k),u(k+N_C|k)) \, \quad \forall i = N_C+1,...,N_P\\
+y(k+i|k) &= h(x(k+i|k),u(k+i|k)) \qquad \, \forall i = 1,...,N_C\\
+y(k+i|k) &= h(x(k+i|k),u(k+N_C|k)) \, \quad \forall i = N_C+1,...,N_P, 
+\end{align} \label{eq:system}
+\end{subequations}
+where $ N_P $ is the prediction horizon, $ Y_{sp} $ is the constant setpoint or desired output of the plant, $ y $ is the predicted output, $ \Delta u $ is the input (control) step size (from one instance to another) and $Q$ and $R$ is the output and input weighing matrices. From (\ref{eq:system}) it can be seen that there are $N_C$ unique control steps, whereafter the last control step is maintained throughout the prediction horizon.
+
+In this assignment, the future manipulated variables (MV) behaviour (or output behaviour) is specified using setpoints, as described by $ Y_{sp}(k) $ in (\ref{eq:ObjFunc}). Future MV behaviour can also be specified by using zones, reference trajectories or a funnel \cite{Qin.2003}.
+
+\subsection{Problem 2: KF Description}
+\label{sec:KFDescription}
+
+\textbf{Problem:} Define a discrete-time Kalman filter in state-space form which can estimate both the process	states and process disturbances. \\
+
+The Kalman filter (KF) takes the implemented CVs, $u_k$, and measurements of the MVs, $y_k$, to determine estimated states, $\hat{x}_k$. In this implementation, the Kalman filter is extended to include estimates of the process disturbances. The process disturbances, $d_k$, can be modelled as random walks. The process model is therefore defined by
+\begin{subequations}
+\begin{align}
+x_{k+1} &= Ax_k + B(u_k+d_k) \\
+d_{k+1} &= d_k + w_k \\
+y_k &= Cx_k. 
+\end{align} \label{eq:modelWithDisturbance}
+\end{subequations}
+The process model is rewritten in an augmented state space model as
+\begin{subequations}
+\begin{align}
+z_{k+1} &= \bar{A}z_k + \bar{B}p_k \\
+y_k &= \bar{C}z_k + \bar{D}p_k,
+\end{align} \label{eq:augModel}
+\end{subequations}
+where
+\begin{subequations}
+\begin{align}
+z_k &= \begin{bmatrix}
+x_k \\ d_k
+\end{bmatrix} \label{eq:augStates}\\
+p_k &= \begin{bmatrix}
+u_k \\ w_k
+\end{bmatrix} \\
+\bar{A} &= \begin{bmatrix}
+A & B \\
+0 & I
+\end{bmatrix} \\
+\bar{B} &= \begin{bmatrix}
+B & 0 \\
+0 & I
+\end{bmatrix} \\
+\bar{C} &= \begin{bmatrix}
+C & 0
+\end{bmatrix}. \\
+\bar{D} &= 0.
+\end{align} \label{eq:augModelParams}
+\end{subequations}
+Note that the random walk variable, $w_k$, will be set to zero in the model, but the value of the disturbance, $d_k$, will be determined and update by the Kalman filter.
+
+The Kalman filter estimates the states in two steps. The next time step (at discrete time $k+1$) estimate, $\hat{z}_{k+1|k}$, is determined in the \textit{time update} step:
+\begin{equation}
+\hat{z}_{k+1|k} = \bar{A} \hat{z}_{k|k} + \bar{B} p_k, \label{eq:timeUpdate}
+\end{equation}
+where $ \hat{z}_{k|k} $ is the current estimate of the states determined from measurements at time $k$. The current estimate is determined in the \textit{measurement update} step:
+\begin{equation}
+\hat{z}_{k|k} = \hat{z}_{k|k-1} + M (y_{vk} - \bar{C} \hat{z}_k), \label{eq:measurementUpdate}
+\end{equation}
+where $ \hat{z}_{k|k-1} $ is the estimate of the state at time $k$, determined by the \textit{time update} step at time $k-1$, $ M $ is the Kalman gain and $ y_{vk} $ is the noisy output measurement. The \textit{time update} step can be rewritten as a state space system, by substituting (\ref{eq:measurementUpdate}) into (\ref{eq:timeUpdate}), as
+\begin{subequations}
+\begin{align}
+\hat{z}_{k+1|k} &= A_{KF} \hat{z}_{k|k-1} B_{KF} u_{KF} \\
+y_{KF} &= C_{KF} \hat{z}_{k|k-1},
+\end{align} \label{eq:KF}
+\end{subequations}
+where 
+\begin{subequations}
+\begin{align}
+u_{KF} &= \begin{bmatrix} p_k \\ y_{vk} \end{bmatrix} \\
+A_{KF} &= \bar{A}(I-M\bar{C}) \\
+B_{KF} &= \begin{bmatrix} \bar{B} & \bar{A}M \end{bmatrix} \\
+C_{KF} &= I.
+\end{align}
+\end{subequations}
+Note that the output of (\ref{eq:KF}) is $ \hat{z}_{k|k-1} $. To determine $ \hat{z}_{k|k} $, the \textit{measurement update} has to be implemented. The \textit{measurement update} step is rewritten as
+\begin{equation}
+\hat{z}_{k|k} = (I-M \bar{C})\hat{z}_{k|k-1} + M y_{vk}.
+\end{equation}
+From the output of the \textit{measurement update}, the filtered (estimated) output can be determined from
+\begin{equation}
+\hat{y}_{k|k} = \bar{C} \hat{z}_{k|k}. \label{eq:KFOutput}
+\end{equation}
+
+\subsection{Problem 3: Process Model}
+
+\textbf{Problem:} Based on the specifications above, give the process model $G_P(s)$ in continuous LTI format. \\
+
+The continuous process model is given in (\ref{eq:procModel}).
+
+\section{System Description in Discrete Time}
+
+\subsection{Problem 4: Discrete State-Space Prediction Model}
+
+\textbf{Problem:} Create a discrete state-space prediction based on the continuous model, by discretizing it with a sampling time of 1 second. \\
+
+The continuous model in (\ref{eq:predModel}) is converted to a discrete-time model using MATLAB's \textit{c2d} function, with a sampling time of $T_s = 1 \,s$. The discrete-time model is converted to a state-space model by using MATLAB's \textit{ss} function. The time-delays are then mapped to discrete-time state by using the \textit{absorbDelay} function, as seen in Section \ref{code:Setup}. The resulting model is
+\begin{subequations}
+\begin{align}
+x_{k+1} &= Ax_k + Bu_k \\
+y_k &= Cx_k + Du_k.
+\end{align} \label{eq:PredModel}
+\end{subequations}
+with the $A$, $B$ and $C$ matrices corresponding to the matrices in (\ref{eq:modelWithDisturbance}) and (\ref{eq:augModelParams}). These matrices are
+\begin{subequations}
+\begin{equation}
+A = \begin{bmatrix}
+0.9419	&0	&0	&0&	0&	0&	0&	0&	0&	0	&1&	0&	0&	0\\
+0&	0.9123&	0&	0&	0&	0&	0&	0&	0&	0&	1&	0&	0&	0\\
+0&	0&	0.9535&	0&	0&	0&	0&	0&	0&	0&	0&	1&	0&	0\\
+0&	0&	0&	0.9329&	0&	0&	0&	0&	0&	0&	0&	1&	0&	0\\
+0&	0&	0&	0&	0&	1&	0&	0&	0&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0	&1	&0&	0&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0&	0&	1&	0&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0&	0&	0&	1&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0&	0&	0&	0&	1&	0&	0&	0&	0\\
+0&	0.5786&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0\\
+0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	1&	0\\
+0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	1\\
+0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0
+\end{bmatrix}
+\end{equation}
+\begin{align}
+B &= \begin{bmatrix}
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+0&	0\\
+1&	0\\
+0&	0\\
+0&	0\\
+0&	1
+\end{bmatrix} \\
+C &= \begin{bmatrix}
+0.7440&	0&	-0.8789&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0&	0 \\
+0&	0&	0&	-1.3015&	1&	0&	0&	0&	0&	0&	0&	0&	0&	0
+\end{bmatrix} \\
+D &= \begin{bmatrix}
+0&	0\\
+0&	0
+\end{bmatrix}
+\end{align}
+\end{subequations}
+
+\subsection{Problem 5: KF Model}
+
+\textbf{Problem:} Create a discrete state-space model for the Kalman filter, based on your discrete-time model for the MPC. The KF should also estimate the process disturbances. \\
+
+The answer to this problem is included in Section \ref{sec:KFDescription} (Problem 2). This is implemented in code, as can be seen in Section \ref{code:Setup}.
+
+\subsection{Problem 6: KF Gain}
+
+\textbf{Problem:} Create a discrete-time linear KF using the MATLAB command “kalman”, based on the state-space KF model. \\
+
+The augmented state-space prediction model defined in (\ref{eq:augModel}) and (\ref{eq:augModelParams}) are used in MATLAB's \textit{kalman} function to determine the Kalman gain, as can be seen in Section \ref{code:Setup}. In addition to the process noise, $w_k$, measurements of the output includes noise, $v_y$. The augmented process model for the Kalman filter is therefore given by (note that $\bar{D}=0$)
+\begin{subequations}
+\begin{align}
+z_{k+1} &= \bar{A}z_k + \bar{B} \begin{bmatrix} u_k \\ w_k \end{bmatrix} \\
+y_k &= \bar{C}z_k + v_k,
+\end{align} \label{eq:augModelwithNoise}
+\end{subequations}
+where $w_k$ is the process noise with a covariance of $E(w_k w_k^T)=Q_{KF}$ and $v_k$ is the measurement noise with a covariance of $E(v_k v_k^T)=R_{KF}$. It may not always be possible to physically measure the noise covariances. The $Q_{KF}$ and $R_{KF}$ matrices are chosen based on prior knowledge of the process and measurement noise and tuned to produce the best possible control. The absolute value of $Q_{KF}$, $R_{KF}$ or elements within the matrices do not matter, but their values with respect to each other do.
+
+In the simulation done in this assignment, there is no reason to expect that the noise will be greater on one of the inputs or outputs than of the other. Therefore $Q_{KF11}=Q_{KF22}$ and $R_{KF11}=R_{KF22}$ where chosen. The output noise in this simulation contributes more to the disturbance of the system than the input noise, therefore  $R_{KF}=50 Q_{KF}$ was chosen. The chosen noise covariance matrices are
+\begin{subequations}
+\begin{align}
+Q_{KF} &= \begin{bmatrix}
+1 & 0 \\
+0 & 1
+\end{bmatrix} \\
+R_{KF} &= \begin{bmatrix}
+50 & 0 \\
+0 & 50
+\end{bmatrix}
+\end{align} \label{eq:NoiseCovarianceMatrices}
+\end{subequations}
+
+Based on the augmented process matrices defined in (\ref{eq:augModelParams}) and the noise covariance matrices in (\ref{eq:NoiseCovarianceMatrices}), the Kalman gain is
+\begin{equation}
+M = \begin{bmatrix}
+0.4218&   -0.2423 \\
+0.3965&   -0.2233\\
+-0.0608&   -0.3204\\
+-0.0618&  -0.3101\\
+0.0210&   -0.0227\\
+0.0405&   -0.0335\\
+0.0668&   -0.0489\\
+0.0999&   -0.0677\\
+0.1394&   -0.0883\\
+0.1836&   -0.1092\\
+0.1070&   -0.0511\\
+-0.0348&   -0.0989\\
+-0.0348&   -0.0989\\
+-0.0348&   -0.0989\\
+0.1070&   -0.0511\\
+-0.0348&   -0.0989
+\end{bmatrix}
+\end{equation}
+
+\section{Simulink Model}
+\label{sec:SimulinkModel}
+
+The complete Simulink model can be seen in Figure \ref{fig:FullModel}. The plant, $G_p$ is as defined in (\ref{eq:procModel}). The MPC block is implemented by using a level-2 MATLAB s-function block, as seen in Figure \ref{fig:FullModel}. This block allows the use of MATLAB language to create a custom block. The MPC block reads the estimated state and filtered disturbances. The MPC algorithm is implemented within the MPC block, so that the output of the block is the optimal control steps for the plant. The implementation of the code for this block can be seen in Section \ref{code:mpcL2}.
+
+The state and disturbance estimates are done by the \textit{Kalman Filter} block, as can be seen in Figure \ref{fig:KalmanFilter}. The \textit{Kalman Filter} block implements (\ref{eq:KF}) to (\ref{eq:KFOutput}), to determine a current estimate of the states (including disturbance) and output based on the implemented input/control, measured output and previous predicted states ($x_{k|k-1}$).
+
+The disturbance estimate is filtered by the \textit{State Disturbance Filter} block seen in Figure \ref{fig:StateDisturbanceFilter}. This filter is explained in Section \ref{sec:DisturbanceFilter}.
+
+The sampling time for the discrete plant and for the MPC block is 1 second. The Simulink \textit{solver options} are therefore set to use \textit{Runge-Kutta} with a \textit{fixed-step size} of 1 second.
+
+\begin{figure}[H]
+	\includegraphics[width=17cm]{FullModel.jpg}
+	\centering
+	\caption{Simulink Model}
+	\label{fig:FullModel}
+\end{figure}
+
+\begin{figure}[H]
+	\includegraphics[width=17cm]{KalmanFilter.jpg}
+	\centering
+	\caption{Kalman Filter Block}
+	\label{fig:KalmanFilter}
+\end{figure}
+
+\begin{figure}[H]
+	\includegraphics[width=15cm]{StateDisturbanceFilter.jpg}
+	\centering
+	\caption{State Disturbance Filter Block}
+	\label{fig:StateDisturbanceFilter}
+\end{figure}
+
+\section{MPC Controller}
+
+\subsection{Problem 7: MPC Constraints}
+
+\textbf{Problem:} Code the MATLAB function “constraints” that enforces constraints on the inputs. This function will be included as part of the optimization function in the MPC. The constraints for $G_C(s)$ on the manipulated variable (MV) 1 are $(-\infty, 1]$ and on MV 2 are $[-4, \infty)$. \\
+
+Constrained MPC finds the optimal controlled variables (CV) for which the objective function
+\begin{equation}
+\min_{u(k+N_C|k),...,u(k|k)} V(x(k|k),u),
+\end{equation}
+is minimized such that
+\begin{subequations}
+\begin{align}
+c(x,u) &\leq 0 \\
+c_{eq}(x,u) &= 0,
+\end{align}
+\end{subequations}
+where linear and non-linear inequality and equality constraints are captured in $c(x,u)$ and $c_{eq}(x,u)$. The inequality constraints defined in the problem can be formulated as
+\begin{equation}
+c(u) = \begin{bmatrix}
+u_1 - 1 \\
+-u_2 - 4
+\end{bmatrix} \leq 0. \label{eq:constraints}
+\end{equation}
+
+As stated in Section \ref{sec:MPCDescription}, there are $N_C$ unique control steps in the MPC prediction. The constraints needs to be imposed on each of these control steps. The inequality constraints vector implemented is therefore
+\begin{equation}
+c(u) = \begin{bmatrix}
+u_1(k|k) - 1 \\
+\vdots \\
+u_1(k+N_C|k) - 1 \\
+-u_2(k|k) - 4 \\
+\vdots \\
+-u_2(k+N_C|k) - 4
+\end{bmatrix}.
+\end{equation}
+
+The constraints are defined in the \textit{getConstraints} function, as can be seen in Section \ref{code:getConstraints}. These constraints are passed to the \textit{fmincon} function in the \textit{nonlcon} argument, as can be seen in Section \ref{code:mpc}.
+
+\subsection{Problem 8: MPC Algorithm Description}
+
+\textbf{Problem:} Code the Matlab function \textit{ObjFunc} that calculates the objective value that will be optimized by \textit{fmincon}. Your MPC controller must implement blocking to allow for a smooth closed-loop MV trajectory. The function “\textit{ObjFunc}” should use the disturbance estimate from your KF as part of the predictions. Show the algorithm “\textit{ObjFunc}” uses to calculates the predictions for the MPC. \\
+
+As mentioned in Section \ref{sec:mpcDesc}, the MPC algorithm computes the optimal input steps to produce the desired future output (or manipulated variables). The MPC algorithm can be summarized in the following steps:
+\begin{enumerate}
+	\item Guess the optimal future inputs.
+	\item Predict the future output, based on the guessed inputs, from (\ref{eq:PredModel}). 
+	\item Compute the quadratic penalty (cost) due to the difference of the output to the setpoints and the difference between input steps, as described by the objective function defined in (\ref{eq:ObjFunc}).
+	\item Repeat step 1 to 3 to find the optimal input steps.
+\end{enumerate}
+
+These steps are followed within MATLAB's \textit{fmincon} function. This function will numerically compute the optimal input steps, within the constraints defined in the constraints function, to minimize the objective function.
+
+The implementation of the MPC algorithm can be seen in Section \ref{code:mpc}. The constraints are defined in the \textit{getConstraints} function as seen in Section \ref{code:getConstraints}. The computation of the objective function can be seen in Section \ref{code:objectiveFunc}. The implementation of the output prediction can be seen in Section \ref{code:prediction}.
+
+The output and input weighing matrices, $Q$ and $R$, as seen in the objective function in (\ref{eq:ObjFunc}), were chosen to be
+\begin{subequations}
+\begin{align}
+Q &=
+\begin{bmatrix}
+1 & 0 \\
+0 & 1.4
+\end{bmatrix} \\[0.5ex]
+R &=
+\begin{bmatrix}
+0.01 & 0 \\
+0 & 0.04
+\end{bmatrix}.
+\end{align}
+\end{subequations}
+
+\subsection{Testing the MPC Algorithm}
+
+A script to test the MPC algorithm, for the plant in (\ref{eq:predModel}) starting from rest with a [5,-5] setpoint, can be seen in Section \ref{code:TestMPC}. The result of this test can be seen in Figure \ref{fig:TestMPC}.
+
+The \textit{fmincon} function computes the optimal input steps for this test script to be ($N_C=3$ was chosen):
+\begin{align}
+U^* &= \begin{bmatrix}
+u^*_1(k|k) & u^*_1(k+1|k) & u^*_1(k+3|k) \\
+u^*_2(k|k) & u^*_2(k+1|k) & u^*_2(k+3|k)
+\end{bmatrix} \\[0.5ex]
+&= \begin{bmatrix}
+1.0000&    0.9390&    0.5442 \\
+2.0758&    2.1836&    1.7889
+\end{bmatrix}. \nonumber
+\end{align}
+The first two input steps are maintained for six samples each, as specified by the blocking parameter $N_B=6$, and the last input step is maintained for the full duration of the prediction horizon. None of the input values exceed the constraints defined in (\ref{eq:constraints}). The plot is limited to 60 samples, but the chosen prediction horizon is $N_P=100$.
+
+These parameters are only relevant to the prediction simulation. In each time instance of the physical system, the MPC algorithm is repeated to compute the optimal control input. The control input sent into the plant is not maintained as it is done in the prediction simulation (blocking implementation).
+
+\begin{figure}[H]
+	\input{../Matlab/Figures/TestMPC.tex}
+	\centering
+	\caption{MPC Test Result}
+	\label{fig:TestMPC}
+\end{figure}
+
+\section{Simulation}
+
+\subsection{Problem 9: Disturbance Filter}
+\label{sec:DisturbanceFilter}
+
+\textbf{Problem:} Add an extra input to your s-function m-file to read in your disturbance estimate from your KF. Exponentially filter the disturbance estimate to remove unwanted noise from the estimate. Add the filtered disturbance estimate to the MV values of your prediction model in such a way that the MV constraints will still be honoured by your MPC controller. \\
+
+The Kalman filter includes process disturbances, $d_k$, as a state, as can be seen in (\ref{eq:augStates}). The KF therefore estimates the process disturbance. An exponential filter is used to filter the estimated disturbance. The filter is described by 
+\begin{equation}
+\bar{d}_k = \alpha d_k + (1-\alpha) \bar{d}_{k-1},
+\end{equation}
+where $ \bar{d}_k $ is the filtered disturbance, $ \bar{d}_{k-1} $ is the previous filtered value, $d_k$ is the KF estimate of the disturbance and $ \alpha $ is a fraction between 0 and 1 that controls the amount of filtering. The implementation of the filter can be seen in Figure \ref{fig:StateDisturbanceFilter}. The filter with $ \alpha = 0.3 $ produces the result in Figure \ref{fig:Disturbance}.
+
+\begin{figure}[H]
+	\input{../Matlab/Figures/Disturbance.tex}
+	\centering
+	\caption{Estimated and Filtered Disturbance}
+	\label{fig:Disturbance}
+\end{figure}
+
+The filtered disturbance estimate is read by the MPC block, as can be seen in Figure \ref{fig:FullModel}. The disturbance is added to the prediction algorithm as follows (see the code implementation in Section \ref{code:prediction}):
+\begin{subequations}
+\begin{align}
+x_{k+1} &= Ax_k + B(u_k+d_k) \\
+y_k &= Cx_k + D(u_k+d_k).
+\end{align} \label{eq:PredModelWithDisturbance}
+\end{subequations}
+This allows the MPC to take the disturbance into account when calculating the optimal control steps.
+
+\subsection{Problem 10: Simulation Setup}
+
+\textbf{Problem:} Ensure that the plant is simulated with $G_P(s)$. Therefore, there will be model-plant-mismatch between the plant and the model used for the MPC and KF. Create the following events in the simulation: 
+\begin{itemize}
+	\itemsep0em
+	\item Add a step disturbance to MV 1 that will trigger at time 10 seconds with magnitude 1.
+	\item Add a step disturbance to MV 2 that will trigger at time 20 seconds with magnitude -1.
+	\item Add a step disturbance to the output of $G_P(s)$ that will add 1 to CV 1 and -1 to CV 2 at	time 80 seconds.
+	\item Further, add band-limited white noise to the CVs of $G_P(s)$ with a noise power of $\begin{bmatrix} 0.1 & 0.1 \end{bmatrix}^T$ and a sampling time of 1 second.
+	\item Make a set-point step change of $\begin{bmatrix} 5 & -5 \end{bmatrix}^T$ at time 150 seconds.
+	\item Tune your controller to maintain the set-point if the constraints become active.
+\end{itemize}
+
+At the start of the Simulation, the \textit{SetupParameters} function (Section \ref{code:Setup}) is called to create and define the process model, the discrete prediction model, the augmented KF model, the Kalman gain, the setpoint vector array, the control \& prediction horizon, weighing matrices and the sample time. This is done by setting the Simulink \textit{InitFcn} callback to the \textit{SetupParameters} function. The relevant parameters are passed to the MPC block as dialog parameters.
+
+The output setpoints are stored in a vector array, $Y_{spArr}$, as seen in Section \ref{code:Setup}. The setpoint relevant to the simulation time is extracted by the MPC block. To do so, the MPC block keeps track of the simulation time, as seen in the \textit{Update} function in Section \ref{code:mpcL2}.
+
+The specified input disturbance, $D_{u1}$ and $D_{u2}$, output disturbance, $D_y$, and measurement noise, $v_y$, are added to the Simulink model directly, as can be seen in Figure \ref{fig:FullModel}.
+
+\subsection{Problem 11: Simulation Results}
+\label{sec:Results}
+
+\textbf{Problem:} Run the Simulink model for 250 seconds. Start with the initial condition of all the states at 0. Document the plots for the CVs, the setpoint changes, and the MVs. Document the plots of the disturbance estimates from the KF. Properly label the plots. \\
+
+By running the Simulink model, as seen in Figure \ref{fig:FullModel}, for 250 seconds, the output and input results are found, as seen in Figure \ref{fig:Outputs} and \ref{fig:Inputs}. In Figure \ref{fig:Outputs}, $y^*(t)$ is the optimally controlled CVs without measurement noise and $\hat{y}(k)$ is the Kalman filter's estimates of the CVs. The disturbance estimate plot can be seen in Figure \ref{fig:Disturbance}. The plots are generated at the end of the simulation by calling the \textit{PlotResults} script, as seen in Section \ref{code:PlotResults}, from Simulink's \textit{StopFcn} callback function.
+
+\begin{figure}[h!]
+	\input{../Matlab/Figures/Outputs.tex}
+	\centering
+	\caption{Simulation Result: Controlled Variables and Setpoints}
+	\label{fig:Outputs}
+\end{figure}
+
+\begin{figure}[h!]
+	\input{../Matlab/Figures/Inputs.tex}
+	\centering
+	\caption{Simulation Result: Manipulated Variables}
+	\label{fig:Inputs}
+\end{figure}
+
+\section{Conclusion}
+
+\subsection{Problem 12: Performance of MPC and KF}
+
+\textbf{Problem:} Comment on the performance of the MPC and KF. \\
+
+From Figure \ref{fig:Outputs}, it can be concluded that the plant is controlled effectively. Note that $y_2$ only responds to a change in $u_1$ after seven seconds, due to the dead-time, as seen in (\ref{eq:procModel}). This dead-time causes sudden changes in the output response of $y_2$ once large changes in input $u_1$ takes effect (after the dead-time). Despite these large delays, plant model mismatch, MV constraints, input disturbance, output disturbance and measurement noise the MPC controller is able to control the plant's output response (CVs) effectively and track the setpoints.
+
+Without the Kalman filter, the system would not be able to track the setpoints, due to the mismatch between the prediction model and process model, as seen in (\ref{eq:predModel}) and (\ref{eq:procModel}). In the presence of disturbance, the system would not be able to track the setpoints without the disturbance estimates (determined by the KF and disturbance filter).
+
+From the result in Figure \ref{fig:Outputs} it can be seen that the input and output disturbances causes the CVs to briefly move away from the setpoints. As soon as the Kalman filter accurately estimates these disturbances, the controller counteracts its effect (see Figure \ref{fig:Disturbance} and \ref{fig:Inputs}), so that the setpoints are tracked once again. The effect of input disturbance has a larger effect on the CVs than output disturbance. The effect of $D_{u2}$ is larger than that of $D_{u1}$, but it seems that the system responds to (suppresses) the effect of either disturbance in roughly the same amount of time.
+
+In this assignment, the prediction model is the same as the plant model in Assignment 5. The output and input weighing matrices, $Q$ and $R$, are therefore kept the same. $R$ could possibly be decreased to counteract the effect of measurement noise, but doing so did not improve the control in simulation significantly.
+
+As mentioned, the output noise in this simulation contributes more to the disturbance of the system than the input noise, therefore  $R_{KF}=50 Q_{KF}$ was chosen. Increasing $R_{KF}$ further decreases the amount of noise is the estimate, but increases estimation lag. This would result in the state estimate to be inaccurate initially under a new disturbances, but the steady-state estimate could be improved (due to less noise in the estimate).
+
+\subsection{Problem 13: MATLAB Code}
+
+\textbf{Problem:} Attach your MATLAB code to the end of the report. \\
+
+All of the relevant code can bee seen in the Appendix (Section \ref{code:Appendix}).
+
+\bibliographystyle{IEEEtran}
+\bibliography{References}
+
+\section{Appendix: MATLAB Code}
+\label{code:Appendix}
+
+\subsection{SetupParameters Script}
+\label{code:Setup}
+\lstinputlisting[style=Matlab-editor]{../Matlab/SetupParameters.m}
+\,
+
+\subsection{mpc\_s\_L2 Function (MATLAB Level-2 S-Function)}
+\label{code:mpcL2}
+\lstinputlisting[style=Matlab-editor]{../Matlab/mpc_s_L2.m}
+\,
+
+\subsection{mpc Function}
+\label{code:mpc}
+\lstinputlisting[style=Matlab-editor]{../Matlab/mpc.m}
+\,
+
+\subsection{getConstraints Function}
+\label{code:getConstraints}
+\lstinputlisting[style=Matlab-editor]{../Matlab/getConstraints.m}
+\,
+
+\subsection{objectiveFunc Function}
+\label{code:objectiveFunc}
+\lstinputlisting[style=Matlab-editor]{../Matlab/objectiveFunc.m}
+\,
+
+\subsection{prediction Function}
+\label{code:prediction}
+\lstinputlisting[style=Matlab-editor]{../Matlab/prediction.m}
+\,
+
+\subsection{TestMPC Script}
+\label{code:TestMPC}
+\lstinputlisting[style=Matlab-editor]{../Matlab/TestMPC.m}
+\,
+
+\subsection{PlotResults Script}
+\label{code:PlotResults}
+\lstinputlisting[style=Matlab-editor]{../Matlab/PlotResults.m}
+\,
+
+\end{document}

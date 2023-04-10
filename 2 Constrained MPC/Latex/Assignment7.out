@@ -1,0 +1,31 @@
+\BOOKMARK [1][-]{section.1}{Assignment Overview}{}% 1
+\BOOKMARK [1][-]{section.2}{MPC and KF Description}{}% 2
+\BOOKMARK [2][-]{subsection.2.1}{Problem 1: MPC Description}{section.2}% 3
+\BOOKMARK [2][-]{subsection.2.2}{Problem 2: KF Description}{section.2}% 4
+\BOOKMARK [2][-]{subsection.2.3}{Problem 3: Process Model}{section.2}% 5
+\BOOKMARK [1][-]{section.3}{System Description in Discrete Time}{}% 6
+\BOOKMARK [2][-]{subsection.3.1}{Problem 4: Discrete State-Space Prediction Model}{section.3}% 7
+\BOOKMARK [2][-]{subsection.3.2}{Problem 5: KF Model}{section.3}% 8
+\BOOKMARK [2][-]{subsection.3.3}{Problem 6: KF Gain}{section.3}% 9
+\BOOKMARK [1][-]{section.4}{Simulink Model}{}% 10
+\BOOKMARK [1][-]{section.5}{MPC Controller}{}% 11
+\BOOKMARK [2][-]{subsection.5.1}{Problem 7: MPC Constraints}{section.5}% 12
+\BOOKMARK [2][-]{subsection.5.2}{Problem 8: MPC Algorithm Description}{section.5}% 13
+\BOOKMARK [2][-]{subsection.5.3}{Testing the MPC Algorithm}{section.5}% 14
+\BOOKMARK [1][-]{section.6}{Simulation}{}% 15
+\BOOKMARK [2][-]{subsection.6.1}{Problem 9: Disturbance Filter}{section.6}% 16
+\BOOKMARK [2][-]{subsection.6.2}{Problem 10: Simulation Setup}{section.6}% 17
+\BOOKMARK [2][-]{subsection.6.3}{Problem 11: Simulation Results}{section.6}% 18
+\BOOKMARK [1][-]{section.7}{Conclusion}{}% 19
+\BOOKMARK [2][-]{subsection.7.1}{Problem 12: Performance of MPC and KF}{section.7}% 20
+\BOOKMARK [2][-]{subsection.7.2}{Problem 13: MATLAB Code}{section.7}% 21
+\BOOKMARK [1][-]{section.8}{References}{}% 22
+\BOOKMARK [1][-]{section.9}{Appendix: MATLAB Code}{}% 23
+\BOOKMARK [2][-]{subsection.9.1}{SetupParameters Script}{section.9}% 24
+\BOOKMARK [2][-]{subsection.9.2}{mpc\137s\137L2 Function \(MATLAB Level-2 S-Function\)}{section.9}% 25
+\BOOKMARK [2][-]{subsection.9.3}{mpc Function}{section.9}% 26
+\BOOKMARK [2][-]{subsection.9.4}{getConstraints Function}{section.9}% 27
+\BOOKMARK [2][-]{subsection.9.5}{objectiveFunc Function}{section.9}% 28
+\BOOKMARK [2][-]{subsection.9.6}{prediction Function}{section.9}% 29
+\BOOKMARK [2][-]{subsection.9.7}{TestMPC Script}{section.9}% 30
+\BOOKMARK [2][-]{subsection.9.8}{PlotResults Script}{section.9}% 31

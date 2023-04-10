@@ -1,0 +1,551 @@
+\documentclass[12pt]{article}
+
+\usepackage{graphicx} % to include figures
+%\graphicspath{{Figures/}} %This can be used if figures are in a folder in the Latex path
+\graphicspath{{../Matlab/MainProject/Figures/}} %Setting the graphicspath
+\usepackage{float} % to force figure placement with [H]
+\usepackage{geometry} % to set the page size and margins
+\geometry{a4paper, margin=2.5cm}
+\usepackage{amsmath,amsthm,amssymb} % enables \begin{subequations} and \begin{aligned}
+\usepackage{matlab-prettifier} % to import MATLAB code
+\usepackage[hidelinks]{hyperref} % enable hyperlinks (boxes hidden)
+\usepackage{pgf} % enable pgf figures
+\usepackage{siunitx} % enable SI units and notation
+\usepackage{arydshln} % for partitioned matrices with dashed lines
+
+%% packages for pfg plots from MATLAB's exported tex files
+%% See https://github.com/matlab2tikz/matlab2tikz for details
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+%% the following commands are needed for some matlab2tikz features
+\usetikzlibrary{plotmarks}
+\usetikzlibrary{arrows.meta}
+\usepgfplotslibrary{patchplots}
+\usepackage{grffile}
+%% you may also want the following commands
+%\pgfplotsset{plot coordinates/math parser=false}
+%\newlength\figureheight
+%\newlength\figurewidth
+
+\usepackage[numbib]{tocbibind} % give the references section a section number
+
+\newenvironment{problem}[2][Problem]{\begin{trivlist}
+		\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+
+\begin{document}
+
+\title{Assignment 5: Introduction to Unconstrained MPC}
+\author{Charl van de Merwe, 20804157\\
+Optimal Control, EBO 780}
+\date{May 3, 2020}
+
+\maketitle
+
+\section{Assignment Overview}
+The purpose of this assignment is to implement a simple unconstrained linear model predictive controller (MPC), without using MATLAB's MPC toolbox, for the following plant model:
+
+\renewcommand\arraystretch{1.4}
+\begin{equation}
+G(s) =
+\scalebox{1.3}{$  
+\begin{bmatrix}
+\frac{12.8}{16.7s+1}e^{-1s} & \frac{-18.9}{21s+1}e^{-3s}\\
+\frac{6.6}{10.9s+1}e^{-7s} & \frac{-19.4}{14.4s+1}e^{-3s}
+\end{bmatrix}$}. \label{eq1}
+\end{equation}
+\renewcommand\arraystretch{1}
+
+\section{MPC Description}
+\label{code:mpcDesc}
+
+This report is structured to follow the assignment numbering, as follows:
+\begin{problem}{1} Define a discrete-time linear unconstrained MPC by giving the objective function, optimization problem as well as all the variables/parameters involved.\end{problem}
+
+At each time instance, the MPC algorithm computes a sequence of future manipulated variables (MV) to optimize the future plant behaviour. The first input of the optimized system is then sent into the plant. The MPC algorithm is computed at every time instance, at a period equal to the sampling frequency ($ T_s $) \cite{Qin.2003}. MPC is a discrete time algorithm. The optimization problem is described mathematically as
+\begin{equation}
+\min_{u(k+N_C|k),...,u(k|k)} V(x(k|k),u),
+\end{equation}
+
+where $ u $ is the input to the plant, $ x $ is the plant states ($ x(k|k) $ is the initial state, measured or estimated from the plant) $N_C$ is the amount of control steps and $ V $ is the objective function to be minimized. Note that the $ |k $ term indicates that the plant behaviour is predicted from the measured states at discrete time instance $ |k $. As an example, $ x(5|3) $ is the predicted states at instance $5$, propagated from the measured states at instance $3$. The objective function is
+\begin{equation}
+\begin{aligned}
+V(x,u) = &\sum_{i=1}^{N_P} (Y_{sp}(k)-y(k+i|k))^T Q (Y_{sp}(k)-y(k+i|k)) \,+\\ &\sum_{i=1}^{N_C} \Delta u(k+i|k)^T R \,\Delta u(k+i|k), \label{eq3}
+\end{aligned}
+\end{equation}
+subject to
+\begin{subequations}
+	\begin{align}
+	x(k+i+1|k) &= f(x(k+i|k),u(k+i|k)) \qquad \forall i = 1,...,N_C\\
+	x(k+i+1|k) &= f(x(k+i|k),u(k+N_C|k)) \, \quad \forall i = N_C+1,...,N_P\\
+	y(k+i|k) &= h(x(k+i|k),u(k+i|k)) \qquad \forall i = 1,...,N_C\\
+	y(k+i|k) &= h(x(k+i|k),u(k+N_C|k)) \, \quad \forall i = N_C+1,...,N_P, \label{eq4d}
+	\end{align}
+	\label{eq4}
+\end{subequations}
+where $ N_P $ is the prediction horizon, $ Y_{sp} $ is the constant setpoint or desired output of the plant, $ y $ is the predicted output, $ \Delta u $ is the input (control) step size (from one instance to another) and $Q$ and $R$ is the output and input weighing matrices. From (\ref{eq4}) it can be seen that there are $N_C$ unique control steps, whereafter the last control step is maintained throughout the prediction horizon.
+
+In this assignment, the future manipulated variables (MV) behaviour (or output behaviour) is specified using setpoints, as described by $ Y_{sp}(k) $ in (\ref{eq3}). Future MV behaviour can also be specified by using zones, reference trajectories or a funnel \cite{Qin.2003}.
+
+\section{System Description in Discrete Time}
+
+\begin{problem}{2} Convert the continuous-time model to a discrete-time model with sampling time of 1 second and document the model. \end{problem}
+
+The continuous model in (\ref{eq1}) is converted to a discrete-time model using MATLAB's \textit{c2d} function, as seen in Section \ref{code:Setup}, for a sampling time of $T_s = 1 \,s$. The resulting model is
+\renewcommand\arraystretch{1.4}
+\begin{equation}
+G(z) =
+\scalebox{1.3}{$  
+	\begin{bmatrix}
+	\frac{0.744}{z-0.9419}z^{-1} & \frac{-0.8789}{z-0.9535}z^{-3}\\
+	\frac{0.5786}{z-0.9123}z^{-7} & \frac{-1.3015}{z-0.9329}z^{-3}
+	\end{bmatrix}$}. \label{eq5}
+\end{equation}
+\renewcommand\arraystretch{1}
+
+\begin{problem}{3} Convert the discrete-time model to a state-space representation and document the model. \end{problem}
+
+The system's state space representation is found using MATLAB's \textit{ss} and \textit{getDelayModel} functions, as seen in Section \ref{code:Setup}. The discrete state-space system with the dead time (or delay time) incorporated is described by
+\begin{subequations}
+	\begin{align}
+	x(k+1) &=A x(k) + B_1 u_{delayed}(k) + B_2 w(k) \label{eq6a}\\
+	y(k) &= C_1 x(k) + D_{11} u_{delayed}(k) + D_{12} w(k) \label{eq6b}\\
+	z(k) &= C_2 x(k) + D_{21} u_{delayed}(k) + D_{22} w(k) \label{eq6c}\\
+	w(k) &= z(k-\tau), \label{eq6d}
+	\end{align}
+	\label{eq6}
+\end{subequations}
+with
+\begin{equation}
+u_{delayed}(k) = 
+\begin{bmatrix}
+u_1(k-u_{1 Delay})\\
+u_2(k-u_{2 Delay})\\
+\vdots\\
+u_p(k-u_{p Delay})
+\end{bmatrix}, \label{eq7}
+\end{equation}
+where $\tau$ is a component that represents all of the internal delays and $ p $ is the amount of inputs. This model, described by (\ref{eq5}), has $n=4$ states, $p=2$ inputs and $q=2$ outputs.
+
+The state-space matrices found with the aid of MATLAB are
+\begin{subequations}
+\begin{align}
+A &=
+\begin{bmatrix}
+0.9419 & 0 & 0 & 0 \\
+0 & 0.9123 & 0 & 0 \\
+0 & 0 & 0.9535 & 0 \\
+0 & 0 & 0 & 0.9329
+\end{bmatrix} \\[1ex]
+B &=
+\left[
+\begin{array}{c;{2pt/2pt}c}
+B_1 & B_2
+\end{array}
+\right] 
+=
+\left[
+\begin{array}{c c ;{2pt/2pt} c}
+1 & 0 & 0\\
+1 & 0 & 0\\
+0 & 1 & 0\\
+0 & 1 & 0
+\end{array}
+\right] 
+\\[1ex]
+C &=
+\left[
+\begin{array}{c}
+C_1 \\ \hdashline[2pt/2pt]
+C_2
+\end{array}
+\right] 
+=
+\left[
+\begin{array}{c c c c}
+0.744 & 0 & -0.8789 & 0 \\
+0 & 0 & 0 & -1.3015 \\ \hdashline[2pt/2pt]
+0 & 0.5786 & 0 & 0
+\end{array}
+\right] 
+\\[1ex]
+D &= 
+\left[
+\begin{array}{c;{2pt/2pt}c}
+D_{11} & D_{12} \\ \hdashline[2pt/2pt]
+D_{21} & D_{22} 
+\end{array}
+\right]
+=
+\left[
+\begin{array}{c c ;{2pt/2pt} c}
+0 & 0 & 0\\
+0 & 0 & 1\\ \hdashline[2pt/2pt]
+0 & 0 & 0
+\end{array}
+\right].
+\end{align} \label{eq8}
+\end{subequations}
+
+The delay values are
+\begin{subequations}
+\begin{align}
+u_{delayed}(k) &= 
+\begin{bmatrix}
+u_1(k-1)\\
+u_2(k-3)
+\end{bmatrix} \label{eq9a}\\[1ex]
+\tau &= 6.
+\end{align} \label{eq9}
+\end{subequations}
+
+\begin{problem}{4} Create a discrete-time model that outputs the states of the model, by using the identity matrix as the C-matrix and document. The time delays can be expressed as explicit states. \end{problem}
+
+The discrete plant, described in (\ref{eq6}) and (\ref{eq7}), can be simulated by using the Simulink model as seen in Figure \ref{fig:DiscretePlant} to \ref{fig:StatesToOutput}. The \textit{Determine States} block in Figure \ref{fig:DiscretePlant} outputs the states, by setting the block parameters $A$ and $B$ to $A$ and $B_1$, as defined in (\ref{eq8}). $C$ and $D$ are set to the identity matrix and a zeroed matrix, with the same sizes as $C_1$ and $D_{11}$, as defined in (\ref{eq8}).
+
+The \textit{Input Delay} block, as seen in Figure \ref{fig:DiscretePlant} and \ref{fig:InputDelay}, implements the function in (\ref{eq9a}). The plant output is found using the \textit{States to Output} block, as seen in Figure \ref{fig:DiscretePlant} and \ref{fig:StatesToOutput}, which implements (\ref{eq6b}) to (\ref{eq6d}).
+
+\begin{figure}[H]
+	\includegraphics[width=17cm]{DiscretePlant.jpg}
+	\centering
+	\caption{Simulink Discrete Plant Implementation}
+	\label{fig:DiscretePlant}
+\end{figure}
+
+\begin{figure}[H]
+	\includegraphics[width=8cm]{InputDelay.jpg}
+	\centering
+	\caption{Simulink Input Delay Block}
+	\label{fig:InputDelay}
+\end{figure}
+
+\begin{figure}[H]
+	\includegraphics[width=17cm]{StatesToOutput.jpg}
+	\centering
+	\caption{Simulink States to Output Block}
+	\label{fig:StatesToOutput}
+\end{figure}
+
+\section{Prediction and Control Horizon}
+
+\begin{problem}{5} Document the prediction horizon that will lead to 99\% of steady-state for the slowest model to a unit step. \end{problem}
+
+By implementing MATLAB's step function on the plant in (\ref{eq1}), as seen in Section \ref{code:Setup}, a step response of each input variable to each output variable is generated, as seen in Figure \ref{fig:StepResponse}. It is found that for the response of output 1 to a step in input 2 reaches 99\% of it's steady state value ($-18.9$) after $ 99.7 \, s $, which is the slowest observed response.
+
+The prediction horizon, $N_P$, is chosen to cover the longest plant dynamics and the control horizon. The chosen value for the control horizon and prediction horizon is given under \textbf{Problem 6}.
+
+\begin{figure}[h!]
+	%\input{../Matlab/MainProject/Figures/StepResponse.tex}
+	\includegraphics[width=16cm]{StepResponse.jpg}
+	\centering
+	\caption{Plant Step Response}
+	\label{fig:StepResponse}
+\end{figure}
+
+\begin{problem}{6} Document the control horizon that you have chosen. \end{problem}
+
+The control steps are computed with blocking, so that control steps are maintained over a few simulation samples. The control horizon is defined as
+\begin{equation}
+C = N_B \times N_C,
+\end{equation}
+where $N_B$ is the amount of samples that each control step needs to be maintained for and $C$ is the control horizon. The prediction horizon is determined from
+\begin{equation}
+N_P = C + \frac{L}{T_s},
+\end{equation}
+where $L$ is the longest plant dynamics in seconds. After the full MPC Simulink implementation was completed, these parameters where tuned to produce the desired plant response. The chosen values are $N_C=3$, $N_B=6$ and $N_P=118$ (longest plant dynamics rounded to $100 \,s$ and $T_s=1 \,s$). Maintaining each of the three inputs for six samples allows each input to be maintained almost as long as the longest plant delay (seven samples, as seen in (\ref{eq5})). %TODO what is the effect of blocking
+
+Note that these parameters are only relevant to the prediction simulation. In each time instance of the physical system, the MPC algorithm is repeated to compute the optimal control input. The control input sent into the plant is not maintained as it is done in the prediction simulation (blocking implementation). %TODO add graph of measured and simulated signals
+
+\section{MPC Algorithm Implementation}
+\label{code:mpcimplementation}
+
+\begin{problem}{7} Code the Matlab function \textit{ObjFunc} that calculates the objective value that will be optimized by \textit{fminunc}. Your MPC controller must implement blocking to allow for a smooth closed loop MV trajectory. \end{problem}
+
+\begin{problem}{8} Show the code to simulate the model predictions in your objective function using the $ A, B, C $ and $ D $ matrices of the discrete time state-space model explicitly and not \textit{lsim}. \end{problem}
+
+This section answers both \textbf{Problem 7} and \textbf{8}, as they are difficult to explain separately. 
+
+\subsection{MPC Algorithm Description}
+
+As mentioned in Section \ref{code:mpcDesc}, the MPC algorithm computes the optimal input steps to produce the desired future output (or manipulated variables). The MPC algorithm can be summarized in the following steps:
+\begin{enumerate}
+	\item Guess the optimal future inputs.
+	\item Predict the future output based on the guessed inputs, from (\ref{eq6}) and (\ref{eq7}). 
+	\item Compute the quadratic penalty (cost) due to the difference of the output to the setpoints and the difference between input steps, as described by the objective function defined in (\ref{eq3}).
+	\item Repeat step 1 to 3 to find the optimal input steps.
+\end{enumerate}
+
+These steps are followed within MATLAB's \textit{fminunc} function. This function will numerically compute the optimal input steps to minimize the objective function.
+
+The implementation of the MPC algorithm can be seen in Section \ref{code:mpc}. The computation of the objective function can be seen in Section \ref{code:objectiveFunc}. The implementation of the output prediction can be seen in Section \ref{code:prediction}.
+
+\subsection{Testing the MPC Algorithm}
+
+A script to test the MPC algorithm, for the plant in (\ref{eq1}) starting from rest with a [5,-5] setpoint, can be seen in Section \ref{code:TestMPC}. The result of this test can be seen in Figure \ref{fig:TestMPC}.
+
+The \textit{fminunc} function computes the optimal input steps for this test script to be
+\begin{align}
+U^* &= \begin{bmatrix}
+u^*_1(k|k) & u^*_1(k+1|k) & u^*_1(k+3|k) \\
+u^*_2(k|k) & u^*_2(k+1|k) & u^*_2(k+3|k)
+\end{bmatrix} \label{eq12}\\
+&= \begin{bmatrix}
+2.6358 & 1.7465 & 1.5409 \\
+1.2987 & 1.1848 & 0.7853
+\end{bmatrix}. \nonumber
+\end{align}
+Note that the first two input steps are maintained for six samples each, as specified by the blocking parameter $N_B=6$, and the last input step is maintained for the full duration of the prediction horizon. The plot is limited to 60 samples, but the prediction horizon is $N_P=118$, as specified.
+
+\begin{figure}[h!]
+	\input{../Matlab/MainProject/Figures/TestMPC.tex}
+	%\includegraphics[width=17.5cm]{StepResponse.jpg}
+	\centering
+	\caption{MPC Test Result}
+	\label{fig:TestMPC}
+\end{figure}
+
+\subsection{Delayed Input Implementation}
+
+From the prediction algorithm in (\ref{eq6}) and (\ref{eq9a}) it is seen that the past input steps are needed. A circular buffer is used to store the past implemented inputs, as follows:
+\begin{equation}
+U_{stored} = \begin{bmatrix}
+u^*_1(k|k) & u^*_1(k-1|k) & u^*_1(k-2|k) & u^*_1(k-3|k) \\
+u^*_2(k|k) & u^*_2(k-1|k) & u^*_2(k-2|k) & u^*_2(k-3|k) \\
+\end{bmatrix}, \label{eq13}
+\end{equation}
+from which $u_{delayed}(k)$, as seen in (\ref{eq9a}), can be determined from:
+\begin{equation}
+u_{delayed}(k) =
+\begin{bmatrix}
+U_{stored}(row \, 1, column \, 2) \\
+U_{stored}(row \, 2, column \, 4)
+\end{bmatrix}. \label{eq14}
+\end{equation}
+Before the next iteration of the prediction algorithm, the buffer is shifted by one sample (or one column to the right). At the start of the next iteration, the first column of the buffer is filled with the input step of that iteration. A buffer created and shifted similarly for the $z(k)$ parameter in (\ref{eq6}). These implementations can be seen in Section \ref{code:prediction}.
+
+\section{Simulink Model Implementation}
+
+\begin{problem}{9} Code a MATLAB Simulink s-function m-file to call \textit{fminunc} on your function ObjFunc and connect it to the original continuous-time model G(s). \end{problem}
+
+\subsection{Simulink Model Description}
+
+A Simulink model was created to model MPC control of the plant, as can be seen in Figure \ref{fig:FullModel}. The continuous plant block is an implementation of (\ref{eq1}), as can be seen in Figure \ref{fig:ContinuousPlant}. The MPC algorithm reads the states of the plant at each step. The states are determined from the discrete plant block, which is a discrete state space implementation of the plant, as seen in Figure \ref{fig:DiscretePlant}. The MPC algorithm is implemented within the MPC block.
+
+The sampling time for the discrete plant and for the MPC block is 1 second. The Simulink \textit{solver options} are therefore set to use \textit{Runge-Kutta} with a \textit{fixed-step size} of 1 second.
+
+\begin{figure}[h!]
+	\includegraphics[width=14cm]{FullModel.jpg}
+	\centering
+	\caption{Full Simulink Model}
+	\label{fig:FullModel}
+\end{figure}
+
+\begin{figure}[h!]
+	\includegraphics[width=15cm]{ContinuousPlant.jpg}
+	\centering
+	\caption{Simulink Continuous Plant Block}
+	\label{fig:ContinuousPlant}
+\end{figure}
+
+\subsection{MPC Block Coding}
+
+The MPC algorithm is run in the Simulink model by using a level-2 MATLAB s-function block, as seen in Figure \ref{fig:FullModel}. This block allows the use of MATLAB language to create a custom block. A template for creating a m-file to define the workings of the block can be invoked by typing \textit{edit msfuntmpl\_basic} in the \textit{Command Window}. The definition of the MPC block can be seen in Section \ref{code:mpcL2}.
+
+\subsubsection{Block Setup}
+
+At the start of the Simulation, the \textit{SetupParameters} function (Section \ref{code:Setup}) is called to create and define the discrete model in (\ref{eq5}), the setpoint vector array, the control \& prediction horizon, weighing matrices and the sample time. This is done by setting the Simulink \textit{InitFcn} callback to the \textit{SetupParameters} function. These parameters are passed to the MPC block as dialog parameters.
+
+The basic characteristics of the MPC block, such as the amount of inputs and outputs, are defined in the \textit{setup} function, as seen in Section \ref{code:mpcL2}. Storage of data within the block is done in the block's \textit{Dwork} vectors. The size and amount of \textit{Dwork} vectors have to be defined in the \textit{DoPostPropSetup} function.
+
+At the start of the Simulink simulation, the MPC block's \textit{start} function is called. In this function, the state space parameters in (\ref{eq8}) and (\ref{eq9}) are determined, flattened and stored in the \textit{Dwork} vectors.
+
+At the start of the prediction simulation, the values for previously implemented parameters $u(k)$ and $z(k)$ are needed, as can be seen from (\ref{eq6d}) and (\ref{eq9a}). The required storage sizes are set in the \textit{DoPostPropSetup} function and the vectors are initialized to zero at the start of the simulation in the \textit{start} function.
+	
+\subsubsection{Code Execution During Simulation}
+
+During each Simulink simulation step, the \textit{Outputs} function is called in the MPC block, as seen in Section \ref{code:mpcL2}. This function reads the current state from the Simulink environment and determines the output setpoint based on the current simulation time. These parameters, as well as the plant model parameters, system parameters and stored parameters are passed to the \textit{mpc} function. The \textit{mpc} function, as seen in Section \ref{code:mpc}, then calculates the optimal control steps to deliver the desired future response, as was described in Section \ref{code:mpcimplementation}.
+
+The difference between the MPC implementation during simulation and for the test function (as in Section \ref{code:TestMPC}, result in Figure \ref{fig:TestMPC}), is that the current states and previously implemented parameters $u(k)$ and $z(k)$, as can be seen from (\ref{eq6d}) and (\ref{eq9a}), are not zero. For the full simulation, the output setpoint changes from [5,-5] to [-5,5] at simulation discrete time of 100 (step 101), as described in \textbf{Problem 10}. The optimal future input and output calculated by the MPC algorithm at this step can be seen in Figure \ref{fig:MPCduringSim}. 
+
+At the start of the prediction algorithm for the Simulink time of 100 (step 101), the input buffer in (\ref{eq13}) must have the previously implemented simulation step inputs stored, as follows:
+\begin{equation}
+U_{stored} = \begin{bmatrix}
+u^*_1(100|100) & u^*_1(99|100) & u^*_1(98|100) & u^*_1(97|100) \\
+u^*_1(100|100) & u^*_1(99|100) & u^*_1(98|100) & u^*_1(97|100) \\
+\end{bmatrix}. \label{eq15}
+\end{equation}
+This is done by saving the current input (to be implemented for the current Simulink step) in the first column of the buffer after the MPC calculation is complete. At the start of the next Simulink step, the buffer is shifted one column to the right. Similar logic is followed with the storage of $z(k)$. This implementation can be seen in Section \ref{code:mpcL2}.
+
+\begin{figure}[h!]
+	\input{../Matlab/MainProject/Figures/MPCduringSim.tex}
+	%\includegraphics[width=17.5cm]{StepResponse.jpg}
+	\centering
+	\caption{MPC Prediction During Simulation at Simulation Step 101}
+	\label{fig:MPCduringSim}
+\end{figure}
+
+To increase the speed with which \textit{fminunc} finds the optimal input steps, as described by (\ref{eq12}), the optimal input steps found by the previous Simulink simulation step is used as a first guess for the optimal inputs of the current simulation step, as seen in Section \ref{code:mpcL2} and \ref{code:mpc}.
+
+At the end of the \textit{Outputs} function, the block output is set to the plant input to implement in the current Simulink step.
+
+\subsection{Testing the Plant Model Implementations}
+
+The implementation of the model of the physical system needs to be very accurate for MPC to be effective. A mistake in the model used in the prediction algorithm, as seen in Section \ref{code:prediction}, would be costly. The output of the discrete plant block is compared to the continuous plant block to verify that (\ref{eq6}) to (\ref{eq9}) produces the desired response, as seen in Figure \ref{fig:FullModel}. Both the continuous and discrete plant outputs are plotted on the simulation result plot in Figure \ref{fig:Outputs} in Section \ref{sec:Results}.
+
+To test the implementation of (\ref{eq6}) to (\ref{eq9}) within the MPC block, the second output of the block was set to $y(k|k)$, as seen in Section \ref{code:mpcL2}. It was found that this output produced the exact same result as the discrete plant block output, confirming that the MPC implementation of the plant, as well as storages of past variables, was implemented correctly. The second output was not used thereafter, as seen in Figure \ref{fig:FullModel}, because it does not contribute any new information to the simulation.
+
+\section{Simulation and Results}
+
+\begin{problem}{10} Run the Simulink model for 200 seconds and document the plot for the controlled variables and the manipulated variables. Start with the initial condition of all the states at 0 and then make a setpoint changes from [0;0] to [5;-5] at time 20 seconds and then to [-5;5] at time 100 seconds. \end{problem}
+
+\subsection{Setpoint}
+
+The output setpoints described in \textbf{Problem 10} are stored in a vector array, $Y_{sp}$, as seen in Section \ref{code:Setup}. The setpoint relevant to the simulation time is extracted by the MPC block. To do so, the MPC block keeps track of the simulation time, as seen in the \textit{Update} function in Section \ref{code:mpcL2}.
+
+\subsection{Tuning Q and R}
+\label{sec:QandR}
+
+The weighing matrices in the objective function (\ref{eq3}) are diagonal matrices defined by
+\begin{align}
+Q &=
+\begin{bmatrix}
+Q_{11} & 0 \\
+0 & Q_{22}
+\end{bmatrix} \\[0.5ex]
+R &=
+\begin{bmatrix}
+R_{11} & 0 \\
+0 & R_{22}
+\end{bmatrix}.
+\end{align}
+If $Q_{22}$ is larger than $Q_{11}$, then a deviation in $y_2$ from the setpoint will be penalized greater by the objective function, as seen in (\ref{eq3}), than for a deviation in $y_1$. The assignment does not specify a preference in the performance of either output, but it is chosen to favour $y_2$ slightly, due to it's slower response. The final values of $Q_{11}=1$ and $Q_{22}=1.4$ are the result of tuning (testing various values).
+
+By testing various values for $R$ relative to $Q$, it was found that choosing $R_{11}$ so that a step change in $u_1$ of one ($\Delta u_1=1$) contributes the same amount to the objective function as a 2\% deviation in the steady state of $y_{1ss}=5$, delivers a smooth plant response. This relationship can be expressed mathematically as
+\begin{equation}
+\Delta u_1 \times R_{11} \times \Delta u_1 = (2\% \, y_{1ss}) \times Q_{11} \times (2\% \, y_{1ss}),
+\end{equation}
+from which $R_{11}=0.01$ is found.
+
+If $R_{22}$ is larger than $R_{11}$, the MPC control will be biased to move the system more with $u_1$. From the step response in Figure \ref{fig:StepResponse} (or from the plant in (\ref{eq1})), it is seen that the contribution of $u_2$ to the end state of the plant is approximately double that of $u_1$:
+\begin{equation}
+\frac{18.9+19.4}{12.8+6.6} = 1.97 \approx 2.
+\end{equation}
+$R_{22}$ is therefore chosen so that a step of $u_2=1$ contributes roughly the same to the objective function as a step of $u_1=2$. This relationship can be expressed mathematically as
+\begin{equation}
+\Delta u_2 \times R_{22} \times \Delta u_2 = \Delta u_1 \times R_{11} \times \Delta u_1,
+\end{equation}
+from which $R_{22}=0.04$ is found.
+
+The chosen matrices are defined in the \textit{SetupParameters} function, as seen in Section \ref{code:Setup}.
+
+\subsection{Results}
+\label{sec:Results}
+
+By running the Simulink model, as seen in Figure \ref{fig:FullModel}, for 200 seconds, the output and input results are found, as seen in Figure \ref{fig:Outputs} and \ref{fig:Inputs}. The plots are generated at the end of the simulation by calling the \textit{PlotResults} script, as seen in Section \ref{code:PlotResults}, from Simulink's \textit{StopFcn} callback function.
+
+From Figure \ref{fig:Outputs}, it can be concluded that the plant is controlled effectively. Note that $y_2$ only responds to a change in $u_1$ after seven seconds, due to the dead-time, as seen in (\ref{eq1}). This dead-time causes sudden changes in the output response of $y_2$ once large changes in input $u_1$ takes effect (after the dead-time). Even with these large delays, the MPC controller is able to control the plant's output response effectively.
+
+\begin{figure}[H]
+	\input{../Matlab/MainProject/Figures/Outputs.tex}
+	\centering
+	\caption{Simulation Result: Outputs}
+	\label{fig:Outputs}
+\end{figure}
+
+\begin{figure}[h!]
+	\input{../Matlab/MainProject/Figures/Inputs.tex}
+	\centering
+	\caption{Simulation Result: Inputs}
+	\label{fig:Inputs}
+\end{figure}
+
+\section{Other}
+
+\begin{problem}{11} Attach your MATLAB code to the end of the report. \end{problem}
+
+All of the relevant code can bee seen in the Appendix (Section \ref{code:Appendix}).
+
+\begin{problem}{12} Assume you have setup a MPC controller for a 2-by-2 system with $N_P=20$ and $N_C=3$. Determine what $Q_1$ and $Q_2$ should be in order for a 1\% deviation of $y_1$ for the steady-state of 150 to contribute 5 times as much as a 7\% deviation of $y_2$ from its steady-state value of 320 to the objective function. Further, determine what $R_1$ and $R_2$ should be that a 10\% change relative to the range of $u_1$ of 0 - 400 contribute the same to the objective function as a 20\% change relative to the range of $u_2$ of 25 - 68. Lastly, the contribution of $y_1$ and $y_2$ should be 60 times larger for the stated deviations than the contributions of $u_1$ and $u_2$, after the objective function was corrected for prediction and control horizon. Document your calculations in your report. \end{problem}
+
+The mathematical relationship that will ensure that a 1\% deviation of $y_1$ from the steady-state of 150 will contribute 5 times as much as a 7\% deviation of $y_2$ from its steady-state value of 320 to the objective function, is
+\begin{equation}
+(1\% \cdot 150)^2 \, Q_1 = 5(7\% \cdot 320)^2 \, Q_2.
+\end{equation}
+
+The mathematical relationship that will ensure that a 10\% change relative to the range of $u_1$ of 0 - 400 contribute the same to the objective function as a 20\% change relative to the range of $u_2$ of 25 - 68, is
+\begin{equation}
+(10\% \cdot 400)^2 \, R_1 = (20\% \cdot 43)^2 \, R_2.
+\end{equation}
+
+The mathematical relationship that will ensure that the contribution of $y_1$ and $y_2$ is 60 times larger for the stated deviations than the contributions of $u_1$ and $u_2$ (without scaling for $N_P$ and $N_C$), is
+\begin{equation}
+(1\% \cdot 150)^2 \, Q_1 + 5(7\% \cdot 320)^2 \, Q_2 = 60[(10\% \cdot 400)^2 \, R_1 + (20\% \cdot 43)^2 \, R_2].
+\end{equation}
+
+These equations are rewritten as
+\begin{align}
+0 &= 2.25 \, Q_1 - 2508.8 \, Q_2 \label{eq24}\\
+0 &= 1600 \, R_1 - 73.96 \, R_2 \\
+0 &= 2.25 \, Q_1 + 2508.8 \, Q_2 - 96000 \, R_1 - 4437.6 \, R_2 \label{eq26}
+\end{align}
+
+If $Q_2=1$ is chosen, $Q_1=1115$, $R_1=0.0261$ and $R_2=0.5654$ are found from (\ref{eq24}) to (\ref{eq26}). Scaling $R$ to take into account the difference in $N_P$ and $N_C$ can be done by
+\begin{equation}
+R_{scaled} = \frac{N_P}{N_C} R
+\end{equation}
+
+Implementing the scaling produces the following final values for $Q$ and $R$:
+\begin{align*}
+Q &=
+\begin{bmatrix}
+1115 & 0 \\
+0 & 1
+\end{bmatrix} \\[0.5ex]
+R &=
+\begin{bmatrix}
+0.1742 & 0 \\
+0 & 3.769
+\end{bmatrix}.
+\end{align*}
+
+\bibliographystyle{IEEEtran}
+\bibliography{References}
+
+\section{Appendix: MATLAB Code}
+\label{code:Appendix}
+
+\subsection{SetupParameters Script}
+\label{code:Setup}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/SetupParameters.m}
+\,
+
+\subsection{mpc\_s\_L2 Function (MATLAB Level-2 S-Function)}
+\label{code:mpcL2}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/mpc_s_L2.m}
+\,
+
+\subsection{mpc Function}
+\label{code:mpc}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/mpc.m}
+\,
+
+\subsection{objectiveFunc Function}
+\label{code:objectiveFunc}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/objectiveFunc.m}
+\,
+
+\subsection{prediction Function}
+\label{code:prediction}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/prediction.m}
+\,
+
+\subsection{TestMPC Script}
+\label{code:TestMPC}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/TestMPC.m}
+\,
+
+\subsection{PlotResults Script}
+\label{code:PlotResults}
+\lstinputlisting[style=Matlab-editor]{../Matlab/MainProject/PlotResults.m}
+\,
+
+\end{document}

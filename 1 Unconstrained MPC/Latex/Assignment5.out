@@ -1,0 +1,28 @@
+\BOOKMARK [1][-]{section.1}{Assignment Overview}{}% 1
+\BOOKMARK [1][-]{section.2}{MPC Description}{}% 2
+\BOOKMARK [1][-]{section.3}{System Description in Discrete Time}{}% 3
+\BOOKMARK [1][-]{section.4}{Prediction and Control Horizon}{}% 4
+\BOOKMARK [1][-]{section.5}{MPC Algorithm Implementation}{}% 5
+\BOOKMARK [2][-]{subsection.5.1}{MPC Algorithm Description}{section.5}% 6
+\BOOKMARK [2][-]{subsection.5.2}{Testing the MPC Algorithm}{section.5}% 7
+\BOOKMARK [2][-]{subsection.5.3}{Delayed Input Implementation}{section.5}% 8
+\BOOKMARK [1][-]{section.6}{Simulink Model Implementation}{}% 9
+\BOOKMARK [2][-]{subsection.6.1}{Simulink Model Description}{section.6}% 10
+\BOOKMARK [2][-]{subsection.6.2}{MPC Block Coding}{section.6}% 11
+\BOOKMARK [3][-]{subsubsection.6.2.1}{Block Setup}{subsection.6.2}% 12
+\BOOKMARK [3][-]{subsubsection.6.2.2}{Code Execution During Simulation}{subsection.6.2}% 13
+\BOOKMARK [2][-]{subsection.6.3}{Testing the Plant Model Implementations}{section.6}% 14
+\BOOKMARK [1][-]{section.7}{Simulation and Results}{}% 15
+\BOOKMARK [2][-]{subsection.7.1}{Setpoint}{section.7}% 16
+\BOOKMARK [2][-]{subsection.7.2}{Tuning Q and R}{section.7}% 17
+\BOOKMARK [2][-]{subsection.7.3}{Results}{section.7}% 18
+\BOOKMARK [1][-]{section.8}{Other}{}% 19
+\BOOKMARK [1][-]{section.9}{References}{}% 20
+\BOOKMARK [1][-]{section.10}{Appendix: MATLAB Code}{}% 21
+\BOOKMARK [2][-]{subsection.10.1}{SetupParameters Script}{section.10}% 22
+\BOOKMARK [2][-]{subsection.10.2}{mpc\137s\137L2 Function \(MATLAB Level-2 S-Function\)}{section.10}% 23
+\BOOKMARK [2][-]{subsection.10.3}{mpc Function}{section.10}% 24
+\BOOKMARK [2][-]{subsection.10.4}{objectiveFunc Function}{section.10}% 25
+\BOOKMARK [2][-]{subsection.10.5}{prediction Function}{section.10}% 26
+\BOOKMARK [2][-]{subsection.10.6}{TestMPC Script}{section.10}% 27
+\BOOKMARK [2][-]{subsection.10.7}{PlotResults Script}{section.10}% 28
