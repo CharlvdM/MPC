@@ -61,8 +61,8 @@ R_KF = [50 0; 0 50];
 I = eye(n+p);
 A_KF = Abar * (I-M*Cbar);
 B_KF = [Bbar, Abar*M];
-C_KF = eye(16);
-D_KF = zeros(16,6);
+C_KF = eye(length(A_KF));
+D_KF = zeros(length(A_KF),size(B_KF,2));
 % C_KF = I - M*Cbar;
 % D_KF = [zeros(n+p, 2*p), M];
 
